@@ -1,0 +1,6 @@
+# backend secrets
+api/.env
+api/.venv/
+
+# node
+web/node_modules/
