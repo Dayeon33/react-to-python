@@ -4,3 +4,5 @@ api/.venv/
 
 # node
 web/node_modules/
+__pycache__/
+*.pyc
