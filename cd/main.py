@@ -10,6 +10,10 @@ load_dotenv()
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
 # CORS: allow React dev server
 app.add_middleware(
     CORSMiddleware,
