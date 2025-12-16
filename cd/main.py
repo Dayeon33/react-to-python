@@ -23,8 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 class AskRequest(BaseModel):
     question: str  # The question must be provided in English
 
@@ -33,10 +31,6 @@ class AskResponse(BaseModel):
     answer: str
 
 def assert_english(text: str) -> None:
-    """
-    Enforce that the input question is written in English.
-    This is a lightweight heuristic (not perfect) but good for assignment requirements.
-    """
     # If it contains Japanese (Hiragana/Katakana/Kanji), reject.
     if re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", text):
         raise HTTPException(
@@ -45,16 +39,20 @@ def assert_english(text: str) -> None:
         )
 
 def to_kansai(answer: str) -> str:
-    """
-    Force Kansai dialect style for all responses.
-    This post-processing guarantees consistent Kansai-style output.
-    """
     if not answer:
         return "ちょっと今うまく答えられへんわ。"
-    # If it already ends with common Kansai endings, keep it.
     if answer.endswith(("やで。", "やで", "やねん。", "やねん", "やん。", "やん")):
         return answer
     return f"{answer} やで。"
+
+def get_openai_client() -> OpenAI:
+    """
+    Create OpenAI client lazily to avoid crashing the container at import/startup time.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
+    return OpenAI(api_key=api_key)
 
 @app.get("/health")
 def health():
@@ -68,25 +66,31 @@ def ask(req: AskRequest):
     if len(q) > 2000:
         raise HTTPException(status_code=400, detail="question is too long")
 
-    # Enforce English input
     assert_english(q)
 
     try:
+        client = get_openai_client()
         resp = client.responses.create(
             model="gpt-4o-mini",
-            # Force Kansai dialect at the model level as well (belt-and-suspenders)
             input=[
                 {"role": "system", "content": "You must respond in Kansai dialect Japanese."},
                 {"role": "user", "content": q},
             ],
         )
         answer_text = (resp.output_text or "").strip()
-
-        # Guarantee Kansai dialect output
         answer_text = to_kansai(answer_text)
-
         return AskResponse(question=q, answer=answer_text)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get answer: {type(e).__name__}")
+
+# ✅ Cloud Run: listen on $PORT (default 8080)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
+
 
 
